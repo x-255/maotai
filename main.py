@@ -1,23 +1,29 @@
+import pickle
+from os import path
 import time
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
-from datetime import datetime
-from os import path
-import pickle
+
+
 
 IS_DEBUG = True
 
 config = {
     'cookieFile': 'cookies.pkl',
     'loginUrl': 'https://login.taobao.com/',
-    'targetUrl': 'https://chaoshi.detail.tmall.com/item.htm?from_scene=B2C&id=20739895092&spm=a3204.17725404.9886497900.1.79ab5885wTr7fH&skuId=4227830352490',
-    'targetTime': '2023-07-02 22:30:00',
+    # 'targetUrl': 'https://chaoshi.detail.tmall.com/item.htm?from_scene=B2C&id=20739895092&spm=a3204.17725404.9886497900.1.79ab5885wTr7fH&skuId=4227830352490',
+    'targetUrl': 'https://chaoshi.detail.tmall.com/item.htm?id=672213766558',
+    'targetTime': '2023-07-03 22:30:00',
     'maxRetry': 3,
+    'maxWakeTime': 0.1, #min
+    'leadTime': 50, #ms
 }
+
 
 def create_webdriver():
     options = webdriver.ChromeOptions()
@@ -51,9 +57,12 @@ wd = create_webdriver()
 def main():
     login()
     wd.get(config['targetUrl'])
+    scheduler(config['targetTime'])
 
     buy()
-    wd.quit()
+
+    if IS_DEBUG:
+        wd.quit()
 
 
 
@@ -84,17 +93,35 @@ def login_by_cookies():
 
 
 def buy(retry = config['maxRetry']):
-    if retry == 0:
-        print('购买失败')
+    if retry <= 0:
+        print('没有抢到，下次一定。')
         return
     
-    btn = wd.find_element(By.XPATH, '//*[@id="root"]/div/div[2]/div[1]/div[1]/div/div[2]/div[7]/div[1]/button')
-    if 'Actions--disabled' in btn.get_attribute('class'):
-        time.sleep(0.5)
+    buy_btn = wd.find_element(By.XPATH, '//*[@id="root"]/div/div[2]/div[1]/div[1]/div/div[2]/div[7]/div[1]/button')
+    if 'Actions--disabled' in buy_btn.get_attribute('class'):
+        wd.refresh()
         buy(retry - 1)
     else:
-        btn.click()
+        buy_btn.click()
+        if not IS_DEBUG:
+            wd.find_element(By.CSS_SELECTOR, '.go-btn').click()
+        print('抢到了，付钱吧。')
+
+
+def scheduler(time_str: str):
+    now = datetime.now()
+    target_time = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
+    
+    if now < target_time:
+        print('等待中...')
+        time.sleep((target_time - now).seconds)
+        print('开始抢购...')
+        return True
+
+
+
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+    scheduler('2023-07-03 11:40:00')
