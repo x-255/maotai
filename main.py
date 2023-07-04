@@ -18,9 +18,9 @@ COOKIE_EXPIRED_FILE = 'cookie_expired_time.pkl'
 
 config = {
     'targetUrl': 'https://chaoshi.detail.tmall.com/item.htm?from_scene=B2C&id=20739895092&spm=a3204.17725404.9886497900.1.79ab5885wTr7fH&skuId=4227830352490',
-    'targetTime': '2023-07-04 10:00:00',
-    'maxRetry': 10,
-    'leadTime': 50, #ms
+    'targetTime': '2023-07-04 13:42:00',
+    'maxRetry': 3,
+    'leadTime': 210, #ms
 }
 
 
@@ -79,6 +79,7 @@ def login():
 
 
 def login_by_manual():
+    print('请手动登录')
     while True:
         if wd.title == '我的淘宝':
             break
@@ -94,6 +95,7 @@ def login_by_cookies():
             'name': cookie['name'],
             'value': cookie['value'],
         })
+    print('已使用cookie登录成功')
         
 
 def set_cookie_expired_time():
@@ -129,6 +131,19 @@ def scheduler(time_str: str, fn):
         print('开始抢购...')
         fn()
     else:
+        wake_up_time = 60 * 10
+
+        while True:
+            diff = (target_time - now).total_seconds()
+            if diff < wake_up_time:
+                break
+
+            print(f'距离抢购还有{diff}秒')
+            time.sleep(wake_up_time)
+            wd.refresh()
+            set_cookie_expired_time()
+            scheduler(time_str, fn)
+        
         print('等待抢购...')
         time.sleep((target_time - now).total_seconds())
         print('开始抢购...')
