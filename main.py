@@ -17,10 +17,10 @@ COOKIE_FILE = 'cookies.pkl'
 COOKIE_EXPIRED_FILE = 'cookie_expired_time.pkl'
 
 config = {
-    'targetUrl': 'https://chaoshi.detail.tmall.com/item.htm?from_scene=B2C&id=20739895092&spm=a3204.17725404.9886497900.1.79ab5885wTr7fH&skuId=4227830352490',
-    'targetTime': '2023-07-04 13:42:00',
-    'maxRetry': 3,
-    'leadTime': 210, #ms
+    'targetUrl': 'https://chaoshi.detail.tmall.com/item.htm?from_scene=B2C&id=20739895092&spm=a3204.17725404.9886497900.1.79ab5885wTr7fH&skuId=4227830352490', # 抢购地址
+    'targetTime': '2023-07-04 20:00:00', # 抢购时间
+    'maxRetry': 3, # 没抢到时的最大重试次数
+    'leadTime': 150, # 提前多少毫秒开始抢购
 }
 
 
@@ -70,18 +70,18 @@ def main():
 def login():
     wd.get(LOGIN_URL)
 
-    cookie_expired_time = pickle.load(open(COOKIE_EXPIRED_FILE, 'rb'))
+    if path.exists(COOKIE_EXPIRED_FILE):
+        cookie_expired_time = pickle.load(open(COOKIE_EXPIRED_FILE, 'rb'))
 
-    if path.exists(COOKIE_FILE) and datetime.now() < cookie_expired_time:
+    if path.exists(COOKIE_FILE) and cookie_expired_time and datetime.now() < cookie_expired_time:
         login_by_cookies()
     else:
         login_by_manual()
 
 
 def login_by_manual():
-    print('请手动登录')
     while True:
-        if wd.title == '我的淘宝':
+        if not LOGIN_URL in wd.current_url:
             break
     
     pickle.dump(wd.get_cookies(), open(COOKIE_FILE, 'wb'))
@@ -95,7 +95,6 @@ def login_by_cookies():
             'name': cookie['name'],
             'value': cookie['value'],
         })
-    print('已使用cookie登录成功')
         
 
 def set_cookie_expired_time():
@@ -111,7 +110,6 @@ def buy(retry = config['maxRetry']):
     
     buy_btn = wd.find_element(By.XPATH, '//*[@id="root"]/div/div[2]/div[1]/div[1]/div/div[2]/div[7]/div[1]/button')
     if 'Actions--disabled' in buy_btn.get_attribute('class'):
-        print('没有抢到，再来一次。')
         wd.refresh()
         buy(retry - 1)
     else:
@@ -132,20 +130,17 @@ def scheduler(time_str: str, fn):
         fn()
     else:
         wake_up_time = 60 * 10
-
-        while True:
-            diff = (target_time - now).total_seconds()
-            if diff < wake_up_time:
-                break
-
-            print(f'距离抢购还有{diff}秒')
+        diff = (target_time - now).total_seconds()
+        
+        if diff > wake_up_time:
             time.sleep(wake_up_time)
             wd.refresh()
             set_cookie_expired_time()
             scheduler(time_str, fn)
+            return
         
         print('等待抢购...')
-        time.sleep((target_time - now).total_seconds())
+        time.sleep(diff)
         print('开始抢购...')
         fn()
 
