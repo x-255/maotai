@@ -5,10 +5,7 @@ from os import path
 from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.wait import WebDriverWait
-from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium.common.exceptions import NoSuchElementException
-from selenium.webdriver.common.action_chains import ActionChains
 
 
 IS_DEBUG = False
@@ -17,8 +14,8 @@ COOKIE_FILE = 'cookies.pkl'
 COOKIE_EXPIRED_FILE = 'cookie_expired_time.pkl'
 
 config = {
-    'targetUrl': 'https://chaoshi.detail.tmall.com/item.htm?from_scene=B2C&id=20739895092&spm=a3204.17725404.9886497900.1.79ab5885wTr7fH&skuId=4227830352490', # 抢购地址
-    'targetTime': '2023-07-04 20:00:00', # 抢购时间
+    'targetUrl': 'https://cart.taobao.com/cart.htm?from=btop', # 购物车地址
+    'targetTime': '2023-07-05 20:00:00', # 抢购时间
     'maxRetry': 3, # 没抢到时的最大重试次数
     'leadTime': 150, # 提前多少毫秒开始抢购
 }
@@ -60,7 +57,7 @@ def main():
 
     wd.get(config['targetUrl'])
     
-    scheduler(config['targetTime'], buy)
+    scheduler()
 
     if IS_DEBUG:
         wd.quit()
@@ -77,9 +74,11 @@ def login():
         login_by_cookies()
     else:
         login_by_manual()
+    print('登录成功...')
 
 
 def login_by_manual():
+    print('请手动登录...')
     while True:
         if not LOGIN_URL in wd.current_url:
             break
@@ -89,6 +88,7 @@ def login_by_manual():
 
 
 def login_by_cookies():
+    print('正在使用缓存登录...')
     for cookie in pickle.load(open(COOKIE_FILE, 'rb')):
         wd.add_cookie({
             'domain': cookie['domain'],
@@ -102,47 +102,57 @@ def set_cookie_expired_time():
     pickle.dump(expired_time, open(COOKIE_EXPIRED_FILE, 'wb'))
 
 
+def check_all_goods():
+    try:
+        check_all = wd.find_element(By.XPATH, '//*[@id="J_SelectAll1"]/div/label')
+    except NoSuchElementException:
+        print('购物车空空如也，请添加商品后重新运行脚本...')
+        wd.quit()
+        return
+    else:
+        check_all.click()
+
+
 def buy(retry = config['maxRetry']):
-    if retry <= 0:
-        print('没有抢到，下次一定。')
-        set_cookie_expired_time()
+    wd.find_element(By.XPATH, '//a[@class="submit-btn"]').click()
+
+    if IS_DEBUG:
         return
     
-    buy_btn = wd.find_element(By.XPATH, '//*[@id="root"]/div/div[2]/div[1]/div[1]/div/div[2]/div[7]/div[1]/button')
-    if 'Actions--disabled' in buy_btn.get_attribute('class'):
-        wd.refresh()
-        buy(retry - 1)
+    wd.find_element(By.CSS_SELECTOR, '.go-btn').click()
+
+    if '支付宝' in wd.title:
+        print('抢购成功...')
     else:
-        buy_btn.click()
-        if not IS_DEBUG:
-            wd.find_element(By.CSS_SELECTOR, '.go-btn').click()
-        print('抢到了，付钱吧。')
-        set_cookie_expired_time()
+        print('抢购失败...')
 
 
-def scheduler(time_str: str, fn):
+def scheduler():
     now = get_taobao_time()
-    lead_time = timedelta(milliseconds=config['leadTime'])
-    target_time = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S') - lead_time
+    target_time = datetime.strptime(config['targetTime'], '%Y-%m-%d %H:%M:%S')
     
     if now >= target_time:
         print('开始抢购...')
-        fn()
+        check_all_goods()
+        buy()
     else:
         wake_up_time = 60 * 10
         diff = (target_time - now).total_seconds()
+        print(f'距离抢购时间还有 {diff} 秒')
         
         if diff > wake_up_time:
             time.sleep(wake_up_time)
             wd.refresh()
+            scheduler()
             set_cookie_expired_time()
-            scheduler(time_str, fn)
             return
         
+        check_all_goods()
         print('等待抢购...')
         time.sleep(diff)
         print('开始抢购...')
-        fn()
+        buy()
+        set_cookie_expired_time()
 
 
 
@@ -151,9 +161,11 @@ def get_taobao_time():
     headers = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.61 Safari/537.36'
     }
+    start_time = datetime.now()
     taobao_time_stamp = requests.get(url=taobao_time_url, headers=headers).json()['data']['t']
+    req_time = (datetime.now() - start_time).total_seconds()
     
-    return datetime.fromtimestamp(int(taobao_time_stamp) / 1000)
+    return datetime.fromtimestamp(int(taobao_time_stamp) / 1000 + req_time)
 
 
 if __name__ == '__main__':
