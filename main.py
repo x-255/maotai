@@ -5,23 +5,41 @@ from os import path
 from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import NoSuchElementException
+from selenium.webdriver.support import expected_conditions as EC
 
 
-IS_DEBUG = True
+IS_DEBUG = False
 LOGIN_URL = 'https://login.taobao.com'
 COOKIE_FILE = 'cookies.pkl'
 COOKIE_EXPIRED_FILE = 'cookie_expired_time.pkl'
 
 config = {
     'targetUrl': 'https://cart.taobao.com/cart.htm?from=btop', # 购物车地址
-    'targetTime': '2023-07-09 14:18:00', # 抢购时间
+    'targetTime': '2023-07-11 20:00:00', # 抢购时间
     'maxRetry': 3, # 没抢到时的最大重试次数
-    'leadTime': 150, # 提前多少毫秒开始抢购
+    'leadTime': 500, # 提前多少毫秒开始抢购
 }
 
+def get_taobao_timediff():
+    taobao_time_url = 'http://api.m.taobao.com/rest/api3.do?api=mtop.common.getTimestamp'
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.61 Safari/537.36'
+    }
+    local_time = datetime.now()
+    taobao_time_stamp = requests.get(url=taobao_time_url, headers=headers).json()['data']['t']
+    
+    return local_time - datetime.fromtimestamp(int(taobao_time_stamp) / 1000)
+
+taobao_timediff = get_taobao_timediff()
+
 def log(msg):
-    print(f'[{datetime.now()}] {msg}')
+    print(f'[{datetime.now() - taobao_timediff}] {msg}')
+
+
+def find(by, value):
+    return WebDriverWait(wd, timeout=10, poll_frequency=0.5).until(EC.presence_of_element_located((by, value)))
 
 
 def create_webdriver():
@@ -46,7 +64,7 @@ def create_webdriver():
     stealth = open('stealth.min.js', encoding='utf-8').read()
     wd.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
                        'source': stealth})
-    wd.implicitly_wait(10)
+    # wd.implicitly_wait(10)
     wd.maximize_window()
     
     return wd
@@ -107,41 +125,45 @@ def set_cookie_expired_time():
 
 def check_all_goods():
     try:
-        check_all = wd.find_element(By.XPATH, '//*[@id="J_SelectAll1"]/div/label')
+        check_all = find(By.XPATH, '//*[@id="J_SelectAll1"]')
     except NoSuchElementException:
         log('购物车空空如也，请添加商品后重新运行脚本...')
         wd.quit()
         return
     else:
         check_all.click()
+        time.sleep(0.1)
+        if 'selected' in check_all.get_attribute('class'):
+            log('已勾选所有商品...')
+        else:
+            check_all_goods()
+        
 
 
-def buy(retry = config['maxRetry']):
-    wd.find_element(By.XPATH, '//a[@class="submit-btn"]').click()
+def settle():
+    find(By.XPATH, '//a[@class="submit-btn"]').click()
+    log('结算...')
 
-    
-    
-    sub_btn = wd.find_element(By.CSS_SELECTOR, '.go-btn')
-    log('提交订单...')
-    if IS_DEBUG:
-        return
-    
-    sub_btn.click()
 
-    if '支付宝' in wd.title:
-        log('抢购成功...')
+def buy():
+    try:
+        sub_btn =  WebDriverWait(wd, timeout=0.5, poll_frequency=0.1).until(wd.find_element(By.CSS_SELECTOR, '.go-btn'))
+    except NoSuchElementException:
+        wd.refresh()
+        buy()
     else:
-        log('抢购失败...')
-
+        # return
+        sub_btn.click()
+        log('提交订单...')
+    
 
 def scheduler():
-    taobao_timediff = get_taobao_timediff()
-    target_time = datetime.strptime(config['targetTime'], '%Y-%m-%d %H:%M:%S') - taobao_timediff
+    target_time = datetime.strptime(config['targetTime'], '%Y-%m-%d %H:%M:%S') - taobao_timediff - timedelta(milliseconds=config['leadTime'])
     
     now = datetime.now()
     if now >= target_time:
-        log('开始抢购...')
         check_all_goods()
+        settle()
         buy()
     else:
         wake_up_time = 60 * 10
@@ -156,25 +178,14 @@ def scheduler():
             return
         
         check_all_goods()
+        settle()
         log('等待抢购...')
         while True:
             if datetime.now() >= target_time:
                 break
-        log('开始抢购...')
+        wd.refresh()
         buy()
         set_cookie_expired_time()
-
-
-
-def get_taobao_timediff():
-    taobao_time_url = 'http://api.m.taobao.com/rest/api3.do?api=mtop.common.getTimestamp'
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.61 Safari/537.36'
-    }
-    local_time = datetime.now()
-    taobao_time_stamp = requests.get(url=taobao_time_url, headers=headers).json()['data']['t']
-    
-    return local_time - datetime.fromtimestamp(int(taobao_time_stamp) / 1000)
 
 
 if __name__ == '__main__':
