@@ -19,7 +19,7 @@ COOKIE_EXPIRED_FILE = 'cookie_expired_time.pkl'
 
 config = {
     'targetUrl': 'https://cart.taobao.com/cart.htm?from=btop', # 购物车地址
-    'targetTime': '2023-07-12 20:00:00', # 抢购时间
+    'targetTime': '2023-07-13 10:00:00', # 抢购时间
     'maxRetry': 5, # 没抢到时的最大重试次数
     'leadTime': 500, # 提前多少毫秒开始抢购
 }
@@ -185,7 +185,7 @@ def settle():
             pass_verify_silder()
             break
         
-        elif '确认订单' in wd.title:
+        elif 'confirm_order' in wd.current_url:
             log('进入订单确认页面...')
             break
 
@@ -202,9 +202,11 @@ def buy(max_retry=config['maxRetry']):
         wd.refresh()
         buy(max_retry - 1)
     else:
-        # return
-        sub_btn.click()
         log('提交订单...')
+        if IS_DEBUG:
+            return
+        
+        sub_btn.click()
         while True:
             if '支付宝' in wd.title:
                 log('抢购成功，请及时支付订单...')
@@ -227,30 +229,29 @@ def scheduler():
     
     now = datetime.now()
     if now >= target_time:
-        check_all_goods()
-        settle()
-        buy()
-    else:
-        wake_up_time = 60 * 10
-        diff = (target_time - now).total_seconds()
-        log(f'距离抢购时间还有 {diff} 秒')
-        
-        if diff > wake_up_time:
-            time.sleep(wake_up_time)
-            wd.refresh()
-            scheduler()
-            set_cookie_expired_time()
-            return
-        
-        check_all_goods()
-        settle()
-        log('等待抢购...')
-        while True:
-            if datetime.now() >= target_time:
-                break
+        log('抢购时间已过，脚本退出...')
+        return
+    
+    wake_up_time = 60 * 10
+    diff = (target_time - now).total_seconds()
+    log(f'距离抢购时间还有 {diff} 秒')
+    
+    if diff > wake_up_time:
+        time.sleep(wake_up_time)
         wd.refresh()
-        buy()
+        scheduler()
         set_cookie_expired_time()
+        return
+    
+    check_all_goods()
+    settle()
+    log('等待抢购...')
+    while True:
+        if datetime.now() >= target_time:
+            break
+    wd.refresh()
+    buy()
+    set_cookie_expired_time()
 
 
 if __name__ == '__main__':
