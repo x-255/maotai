@@ -65,8 +65,6 @@ def create_webdriver():
         }
     )
 
-    
-
     wd = webdriver.Chrome(options=options)
     stealth = open('stealth.min.js', encoding='utf-8').read()
     wd.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
@@ -182,7 +180,6 @@ def pass_verify_silder():
 
 def settle():
     find(By.XPATH, '//a[@class="submit-btn"]').click()
-    log('结算...')
     while True:
         if '拦截' in wd.title:
             pass_verify_silder()
@@ -198,8 +195,8 @@ def buy(max_retry=config['maxRetry']):
         log('超过最大重试次数，抢购失败')
         return
     try:
-        sub_btn =  find(By.CSS_SELECTOR, '.go-btn', timeout=0.5, poll_frequency=0.1)
-    except NoSuchElementException:
+        sub_btn =  find(By.CSS_SELECTOR, '.go-btn', timeout=1, poll_frequency=0.1)
+    except (NoSuchElementException, TimeoutException):
         time.sleep(0.1)
         log('未找到提交订单按钮，刷新重试...')
         wd.refresh()
@@ -211,6 +208,17 @@ def buy(max_retry=config['maxRetry']):
         while True:
             if '支付宝' in wd.title:
                 log('抢购成功，请及时支付订单...')
+                break
+
+            # 进到小二很忙
+            if 'wait_pc' in wd.current_url:
+                wd.back()
+                buy()
+                break
+
+            # 已经没货了
+            if 'OrderError' in wd.current_url:
+                log('晚了一步，没有货啦...')
                 break
     
 
