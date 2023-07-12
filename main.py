@@ -6,8 +6,10 @@ from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
+
 
 
 IS_DEBUG = False
@@ -17,8 +19,8 @@ COOKIE_EXPIRED_FILE = 'cookie_expired_time.pkl'
 
 config = {
     'targetUrl': 'https://cart.taobao.com/cart.htm?from=btop', # 购物车地址
-    'targetTime': '2023-07-11 20:00:00', # 抢购时间
-    'maxRetry': 3, # 没抢到时的最大重试次数
+    'targetTime': '2023-07-12 20:00:00', # 抢购时间
+    'maxRetry': 5, # 没抢到时的最大重试次数
     'leadTime': 500, # 提前多少毫秒开始抢购
 }
 
@@ -38,8 +40,8 @@ def log(msg):
     print(f'[{datetime.now() - taobao_timediff}] {msg}')
 
 
-def find(by, value):
-    return WebDriverWait(wd, timeout=10, poll_frequency=0.5).until(EC.presence_of_element_located((by, value)))
+def find(by, value,timeout=10, poll_frequency=0.5):
+    return WebDriverWait(wd, timeout=timeout, poll_frequency=poll_frequency).until(EC.presence_of_element_located((by, value)))
 
 
 def create_webdriver():
@@ -48,6 +50,9 @@ def create_webdriver():
     if not IS_DEBUG:
         options.add_experimental_option("detach", True)
     
+    # 更换等待策略为不等待浏览器加载完全就进行下一步操作
+    options.page_load_strategy = 'eager' 
+
     options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
     options.add_argument('--disable-blink-features=AutomationControlled')
     options.add_argument("--disable-images")
@@ -60,20 +65,22 @@ def create_webdriver():
         }
     )
 
+    
+
     wd = webdriver.Chrome(options=options)
     stealth = open('stealth.min.js', encoding='utf-8').read()
     wd.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
                        'source': stealth})
-    # wd.implicitly_wait(10)
     wd.maximize_window()
     
     return wd
 
 
-wd = create_webdriver()
-
-
 def main():
+    global wd
+
+    wd = create_webdriver()
+
     login()
 
     wd.get(config['targetUrl'])
@@ -99,6 +106,7 @@ def login():
 
 
 def login_by_manual():
+    find(By.CSS_SELECTOR, '.icon-qrcode').click()
     log('请手动登录...')
     while True:
         if not LOGIN_URL in wd.current_url:
@@ -116,6 +124,7 @@ def login_by_cookies():
             'name': cookie['name'],
             'value': cookie['value'],
         })
+    set_cookie_expired_time()
         
 
 def set_cookie_expired_time():
@@ -138,23 +147,71 @@ def check_all_goods():
         else:
             check_all_goods()
         
+    
+def pass_verify_silder():
+    silder_box = find(By.CSS_SELECTOR, '#nc_1__scale_text')
+    box_w = silder_box.rect['width']
+    silder = find(By.CSS_SELECTOR, '#nc_1_n1z')
+    silder_w = silder.rect['width']
+    gap = box_w - silder_w
+    maxTry = 5
+
+    def _drop():
+        nonlocal maxTry
+        if maxTry == 0:
+            log('请手动通过滑块校验...')
+            while True:
+                if not '拦截' in wd.title:
+                    return
+        
+        silder = find(By.CSS_SELECTOR, '#nc_1_n1z')
+        ActionChains(wd).drag_and_drop_by_offset(silder, gap, 0).perform()
+        try:
+            err_box = find(By.CSS_SELECTOR, '.errloading')
+        except (NoSuchElementException, TimeoutException):
+            return
+        else:
+            err_box.click()
+            maxTry -= 1
+            _drop()
+    
+    _drop()
+
+    
 
 
 def settle():
     find(By.XPATH, '//a[@class="submit-btn"]').click()
     log('结算...')
+    while True:
+        if '拦截' in wd.title:
+            pass_verify_silder()
+            break
+        
+        elif '确认订单' in wd.title:
+            log('进入订单确认页面...')
+            break
 
 
-def buy():
+def buy(max_retry=config['maxRetry']):
+    if max_retry == 0:
+        log('超过最大重试次数，抢购失败')
+        return
     try:
-        sub_btn =  WebDriverWait(wd, timeout=0.5, poll_frequency=0.1).until(wd.find_element(By.CSS_SELECTOR, '.go-btn'))
+        sub_btn =  find(By.CSS_SELECTOR, '.go-btn', timeout=0.5, poll_frequency=0.1)
     except NoSuchElementException:
+        time.sleep(0.1)
+        log('未找到提交订单按钮，刷新重试...')
         wd.refresh()
-        buy()
+        buy(max_retry - 1)
     else:
         # return
         sub_btn.click()
         log('提交订单...')
+        while True:
+            if '支付宝' in wd.title:
+                log('抢购成功，请及时支付订单...')
+                break
     
 
 def scheduler():
