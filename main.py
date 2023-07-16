@@ -19,9 +19,9 @@ COOKIE_EXPIRED_FILE = 'cookie_expired_time.pkl'
 
 config = {
     'targetUrl': 'https://cart.taobao.com/cart.htm?from=btop', # 购物车地址
-    'targetTime': '2023-07-13 10:00:00', # 抢购时间
+    'targetTime': '2023-07-16 20:00:00', # 抢购时间
     'maxRetry': 5, # 没抢到时的最大重试次数
-    'leadTime': 500, # 提前多少毫秒开始抢购
+    'leadTime': 1000, # 提前多少毫秒开始抢购
 }
 
 def get_taobao_timediff():
@@ -163,7 +163,11 @@ def pass_verify_silder():
                     return
         
         silder = find(By.CSS_SELECTOR, '#nc_1_n1z')
+        ActionChains(wd).click_and_hold(silder).perform()
+        ActionChains(wd).move_by_offset(silder, gap - 50, 0).perform()
+        time.sleep(0.1)
         ActionChains(wd).drag_and_drop_by_offset(silder, gap, 0).perform()
+        
         try:
             err_box = find(By.CSS_SELECTOR, '.errloading')
         except (NoSuchElementException, TimeoutException):
@@ -194,6 +198,10 @@ def buy(max_retry=config['maxRetry']):
     if max_retry == 0:
         log('超过最大重试次数，抢购失败')
         return
+    
+    if '拦截' in wd.title:
+        pass_verify_silder()
+    
     try:
         sub_btn =  find(By.CSS_SELECTOR, '.go-btn', timeout=1, poll_frequency=0.1)
     except (NoSuchElementException, TimeoutException):
@@ -248,6 +256,7 @@ def scheduler():
     log('等待抢购...')
     while True:
         if datetime.now() >= target_time:
+            log('到抢购时间...')
             break
     wd.refresh()
     buy()
