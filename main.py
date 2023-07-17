@@ -19,7 +19,7 @@ COOKIE_EXPIRED_FILE = 'cookie_expired_time.pkl'
 
 config = {
     'targetUrl': 'https://cart.taobao.com/cart.htm?from=btop', # 购物车地址
-    'targetTime': '2023-07-16 20:00:00', # 抢购时间
+    'targetTime': '2023-07-17 20:00:00', # 抢购时间
     'maxRetry': 5, # 没抢到时的最大重试次数
     'leadTime': 1000, # 提前多少毫秒开始抢购
 }
@@ -203,7 +203,7 @@ def buy(max_retry=config['maxRetry']):
         pass_verify_silder()
     
     try:
-        sub_btn =  find(By.CSS_SELECTOR, '.go-btn', timeout=1, poll_frequency=0.1)
+        sub_btn =  find(By.CSS_SELECTOR, '.go-btn', timeout=2, poll_frequency=0.1)
     except (NoSuchElementException, TimeoutException):
         time.sleep(0.1)
         log('未找到提交订单按钮，刷新重试...')
